@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2020",
+    "outDir": "out",
+    "rootDir": "src",
+    "strict": true,
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "lib": ["ES2020", "DOM", "ESNext"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", ".vscode-test"]
+}
