@@ -51,6 +51,12 @@ body {
   text-underline-offset: 2px;
 }
 
+/* Package prefix fading */
+.pkg-faded {
+  opacity: 0.25;
+  filter: grayscale(100%);
+}
+
 /* Log visibility decorations */
 #preview-container .line-faded {
   opacity: 0.3;

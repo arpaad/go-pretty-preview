@@ -53,6 +53,12 @@
           "default": true,
           "description": "Inline one-line if/else-if/else blocks onto a single line"
         },
+        "goPreview.rules.fadePackages": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Package names whose qualifier (e.g. fmt.) is rendered dimmed in the preview. Example: [\"fmt\", \"sync\", \"context\"]"
+        },
         "goPreview.rules.logVisibility": {
           "type": "string",
           "enum": ["normal", "fade", "hide", "highlight"],

@@ -6,6 +6,7 @@ import darkPlusTheme from 'shiki/dist/themes/dark-plus.mjs';
 import lightPlusTheme from 'shiki/dist/themes/light-plus.mjs';
 import goLang from 'shiki/dist/langs/go.mjs';
 import { runTransformers } from './transformers/index';
+import { buildPackageDecorations } from './packageDecorations';
 
 type Highlighter = Awaited<ReturnType<typeof createHighlighterCore>>;
 
@@ -228,7 +229,8 @@ export class GoPreviewProvider {
 
     const tabSize = vscode.workspace.getConfiguration('editor', document.uri).get<number>('tabSize', 4);
 
-    const html = highlighter.codeToHtml(code, { lang: 'go', theme });
+    const decorations = buildPackageDecorations(code);
+    const html = highlighter.codeToHtml(code, { lang: 'go', theme, decorations });
     panel.webview.postMessage({
       type: 'update',
       html,
