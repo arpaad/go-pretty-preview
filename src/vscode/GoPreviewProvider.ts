@@ -1,13 +1,16 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { randomBytes } from 'crypto';
+import { Tree } from 'web-tree-sitter';
 import { createHighlighterCore } from 'shiki/core';
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript';
 import darkPlusTheme from 'shiki/dist/themes/dark-plus.mjs';
 import lightPlusTheme from 'shiki/dist/themes/light-plus.mjs';
 import goLang from 'shiki/dist/langs/go.mjs';
-import { runTransformers } from './transformers/index';
-import { buildPackageDecorations } from './packageDecorations';
+import { runTransformers } from '../core/transformers/index';
+import { descriptorsFromSource, materialize, LineDescriptor } from '../core/descriptors';
+import { PackageDecorationProvider } from '../core/decorations/packageDecorations';
+import { ParserService } from './ParserService';
 
 type Highlighter = Awaited<ReturnType<typeof createHighlighterCore>>;
 
@@ -24,11 +27,16 @@ function getHighlighter(): Promise<Highlighter> {
   return highlighterPromise;
 }
 
+const packageDecorations = new PackageDecorationProvider();
+
 export class GoPreviewProvider {
   private panel: vscode.WebviewPanel | undefined;
   private currentDocUri: string | undefined;
   private currentLineMap: number[] = [];
   private diagnosticsDisposable: vscode.Disposable | undefined;
+  // Monotonic counter: each pushUpdate captures its value and bails before writing
+  // shared state if a newer update (or document switch) has superseded it.
+  private updateGeneration = 0;
 
   private updateTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -38,6 +46,7 @@ export class GoPreviewProvider {
 
   constructor(private readonly context: vscode.ExtensionContext) {
     getHighlighter().catch(() => {});
+    ParserService.getInstance(); // trigger WASM load early
   }
 
   toggle(document: vscode.TextDocument): void {
@@ -281,10 +290,56 @@ export class GoPreviewProvider {
     panel: vscode.WebviewPanel,
     document: vscode.TextDocument
   ): Promise<void> {
-    const highlighter = await getHighlighter();
     const source = document.getText();
-    const { code, lineMap, fadedLineIndices, highlightedLineIndices, collapsedLineIndices } =
-      runTransformers(source);
+    const docUri = document.uri.toString();
+    const gen = ++this.updateGeneration;
+
+    const config = vscode.workspace.getConfiguration('goPreview.rules');
+    const parser = ParserService.getInstance();
+
+    // 1) Parse the source once and run the transformer pipeline. A single tree is
+    //    shared by all transformers — no intermediate re-parse, no leaked trees.
+    let sourceTree: Tree | null = null;
+    try {
+      sourceTree = await parser.parse(source);
+    } catch {
+      sourceTree = null;
+    }
+    let descriptors: LineDescriptor[];
+    try {
+      descriptors = runTransformers(descriptorsFromSource(source), sourceTree, (id) =>
+        config.get(id)
+      );
+    } catch {
+      descriptors = descriptorsFromSource(source);
+    } finally {
+      sourceTree?.delete();
+    }
+
+    const {
+      code,
+      lineMap,
+      fadedLineIndices,
+      highlightedLineIndices,
+      collapsedLineIndices,
+      colMaps,
+    } = materialize(descriptors);
+
+    // 2) Parse the output once for syntax highlighting and decorations.
+    let outputTree: Tree | null = null;
+    try {
+      outputTree = await parser.parse(code);
+    } catch {
+      outputTree = null;
+    }
+    const highlighter = await getHighlighter();
+
+    // A newer update (or a document switch) superseded this one while we awaited.
+    // Bail before touching shared state so stale data can't clobber the current doc.
+    if (gen !== this.updateGeneration || this.currentDocUri !== docUri) {
+      outputTree?.delete();
+      return;
+    }
     this.currentLineMap = lineMap;
 
     const isDark = vscode.window.activeColorTheme.kind !== vscode.ColorThemeKind.Light;
@@ -294,8 +349,15 @@ export class GoPreviewProvider {
       .getConfiguration('editor', document.uri)
       .get<number>('tabSize', 4);
 
-    const decorations = buildPackageDecorations(code);
-    const html = highlighter.codeToHtml(code, { lang: 'go', theme, decorations });
+    let html: string;
+    try {
+      const packages = config.get<string[]>('fadePackages', []);
+      const decorations = packageDecorations.build({ code, tree: outputTree }, packages);
+      html = highlighter.codeToHtml(code, { lang: 'go', theme, decorations });
+    } finally {
+      outputTree?.delete();
+    }
+
     panel.webview.postMessage({
       type: 'update',
       html,
@@ -304,6 +366,7 @@ export class GoPreviewProvider {
       fadedLines: Array.from(fadedLineIndices),
       highlightedLines: Array.from(highlightedLineIndices),
       collapsedLines: Array.from(collapsedLineIndices),
+      colMaps,
       sourceUri: document.uri.toString(),
     });
 

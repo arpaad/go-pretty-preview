@@ -23,12 +23,19 @@
   function colOf(spanEl) {
     const lineEl = spanEl.closest('.line');
     if (!lineEl) return 0;
-    const siblings = [...lineEl.childNodes];
     let col = 0;
-    for (const node of siblings) {
-      if (node === spanEl) break;
-      col += (node.textContent || '').length;
+    // Walk the subtree in document order, accumulating text content until
+    // we reach spanEl. Handles tokens nested inside decoration wrapper spans
+    // (e.g. <span class="pkg-faded"><span style="...">fmt</span></span>).
+    function walk(node) {
+      if (node === spanEl) return true;
+      if (node.nodeType === 3 /* TEXT_NODE */) { col += node.textContent.length; return false; }
+      for (let i = 0; i < node.childNodes.length; i++) {
+        if (walk(node.childNodes[i])) return true;
+      }
+      return false;
     }
+    walk(lineEl);
     return col;
   }
 
