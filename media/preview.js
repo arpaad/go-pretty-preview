@@ -197,7 +197,6 @@
     // Clear previous decorations
     for (const el of container.querySelectorAll('.diag-error,.diag-warning,.diag-info')) {
       el.classList.remove('diag-error', 'diag-warning', 'diag-info');
-      el.removeAttribute('title');
     }
 
     const lineEls = [...getLineElements()];
@@ -206,9 +205,6 @@
       if (!lineEl) continue;
       const cls = severity === 0 ? 'diag-error' : severity === 1 ? 'diag-warning' : 'diag-info';
       lineEl.classList.add(cls);
-      // Append to any existing title
-      const prev = lineEl.getAttribute('title');
-      lineEl.setAttribute('title', prev ? `${prev}\n${message}` : message);
     }
   }
 })();

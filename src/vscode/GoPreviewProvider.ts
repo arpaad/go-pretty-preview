@@ -10,6 +10,7 @@ import {
   buildShell,
   appendRangeDecorations,
   sendDiagnostics,
+  buildHoverHtml,
 } from './previewUtils';
 
 export class GoPreviewProvider {
@@ -223,38 +224,7 @@ export class GoPreviewProvider {
       const x = msg.x as number;
       const y = msg.y as number;
       const pos = new vscode.Position(line, col);
-      const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
-        'vscode.executeHoverProvider',
-        sourceUri,
-        pos
-      );
-      if (!hovers || hovers.length === 0) {
-        this.panel?.webview.postMessage({ type: 'hover-result', html: '', x, y });
-        return;
-      }
-
-      const markdown = hovers
-        .flatMap((h) => h.contents)
-        .map((c) => {
-          if (typeof c === 'string') return c;
-          if ('value' in c) {
-            const ms = c as vscode.MarkdownString;
-            return ms.value;
-          }
-          const marked = c as { language: string; value: string };
-          return `\`\`\`${marked.language}\n${marked.value}\n\`\`\``;
-        })
-        .filter(Boolean)
-        .join('\n\n---\n\n');
-
-      let html = '';
-      try {
-        html =
-          (await vscode.commands.executeCommand<string>('markdown.api.render', markdown)) ?? '';
-      } catch {
-        html = `<pre>${markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`;
-      }
-
+      const html = await buildHoverHtml(sourceUri, pos);
       this.panel?.webview.postMessage({ type: 'hover-result', html, x, y });
     }
 

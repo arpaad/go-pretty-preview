@@ -63,6 +63,46 @@ export function appendRangeDecorations(
   }
 }
 
+const SEVERITY_PREFIX = ['🔴', '⚠️', 'ℹ️', '💡'] as const;
+
+export async function buildHoverHtml(
+  uri: vscode.Uri,
+  pos: vscode.Position
+): Promise<string> {
+  const diagsAtPos = vscode.languages.getDiagnostics(uri).filter((d) => d.range.contains(pos));
+
+  const hovers = await vscode.commands.executeCommand<vscode.Hover[]>(
+    'vscode.executeHoverProvider',
+    uri,
+    pos
+  );
+
+  const hoverMarkdown = (hovers ?? [])
+    .flatMap((h) => h.contents)
+    .map((c) => {
+      if (typeof c === 'string') return c;
+      if ('value' in c) return (c as vscode.MarkdownString).value;
+      const marked = c as { language: string; value: string };
+      return `\`\`\`${marked.language}\n${marked.value}\n\`\`\``;
+    })
+    .filter(Boolean)
+    .join('\n\n---\n\n');
+
+  const diagMarkdown = diagsAtPos
+    .map((d) => `${SEVERITY_PREFIX[d.severity] ?? '🔴'} ${d.message}`)
+    .join('\n\n');
+
+  const parts = [diagMarkdown, hoverMarkdown].filter(Boolean);
+  if (parts.length === 0) return '';
+
+  const markdown = parts.join('\n\n---\n\n');
+  try {
+    return (await vscode.commands.executeCommand<string>('markdown.api.render', markdown)) ?? '';
+  } catch {
+    return `<pre>${markdown.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</pre>`;
+  }
+}
+
 export function sendDiagnostics(
   panel: vscode.WebviewPanel,
   document: vscode.TextDocument,
