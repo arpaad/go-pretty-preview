@@ -124,7 +124,7 @@ The preview is wired into the same language server (gopls) that powers your edit
 
 - **Double-click a line** → jumps to that line in the source editor
 - **Ctrl/Cmd+click a symbol** → Go to Definition
-- **Hover a symbol** → the gopls hover tooltip (types, docs)
+- **Hover a symbol** → combined tooltip: diagnostics (errors/warnings with 🔴/⚠️ prefix) and gopls doc/type info in one popup, just like the real editor
 - **Diagnostics** → errors/warnings from gopls are mirrored as squiggles in the preview
 
 ### 5. Syntax highlighting with a deliberate read-only look
@@ -163,11 +163,22 @@ Then press `F5` in VS Code to open an Extension Development Host with the extens
 
 ## How to use
 
+There are two ways to open the preview, matching the experience of VS Code's built-in Markdown preview:
+
+**Side-by-side** (source + preview visible together):
 1. Open any `.go` file
-2. Click the **eye icon** in the editor title bar, or run **"Go Preview: Open Preview to Side"** from the Command Palette (`Ctrl+Shift+P`)
+2. Click the **open-preview icon** in the editor title bar, or run **"Go Preview: Open Preview to Side"** (`Ctrl+K V`)
 3. The preview opens beside your source editor and updates live as you type
 
-Set `goPreview.openByDefault` to `true` to have the preview open automatically whenever you focus a Go file.
+**Full preview** (only the preview, no source editor):
+1. Open any `.go` file
+2. Run **"Go Preview: Open as Preview Only"** from the Command Palette
+3. The source editor tab closes; only the preview remains
+4. Ctrl/Cmd+click navigates to definitions (opens in the same tab group); double-click opens the source file for editing
+
+Alternatively, right-click a `.go` file in the Explorer → **Open With** → **Go Pretty Preview** to open it full-screen directly from the file tree.
+
+Set `goPreview.openByDefault` to `true` to have the side-by-side preview open automatically whenever you focus a Go file.
 
 ---
 
@@ -219,9 +230,11 @@ src/
       types.ts             DecorationProvider interface (column-level effects)
       packageDecorations.ts  Package-prefix fading (config passed in, not read here)
   vscode/                  editor integration
-    extension.ts           Entry point — activate() wires up commands & listeners
-    GoPreviewProvider.ts   Owns the webview panel, runs the pipeline, bridges to gopls
-    ParserService.ts       vscode wrapper around core GoParser (wasmDir + OutputChannel)
+    extension.ts                    Entry point — activate() wires up commands & listeners
+    GoPreviewProvider.ts            Command-based panel (side-by-side and preview-only modes)
+    GoPreviewCustomEditorProvider.ts  Custom editor — powers "Open With" in the file explorer
+    previewUtils.ts                 Shared utilities: buildShell, buildHoverHtml, sendDiagnostics
+    ParserService.ts                vscode wrapper around core GoParser (wasmDir + OutputChannel)
 media/
   preview.css              Webview styles (two syntax palettes, dimming, tooltip, diagnostics)
   preview.js               Webview script (renders HTML, navigation, hover, diagnostics)

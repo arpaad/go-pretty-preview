@@ -41,14 +41,17 @@ webview (media/preview.js)
    │
    └──▶ gopls bridge: navigate / definition / hover / diagnostics
           positions come from data-sl/data-sc attributes, no DOM walking
+          hover popup merges diagnostics + LSP content via buildHoverHtml()
 ```
 
 ### Key files
 
 | File | Responsibility |
 |---|---|
-| `src/vscode/extension.ts` | `activate()` — registers commands and workspace/editor/config listeners |
-| `src/vscode/GoPreviewProvider.ts` | Owns the `WebviewPanel`. Runs the full pipeline, posts updates, handles webview→host messages (navigate / definition / hover) and diagnostics. Holds the async generation counter that prevents stale updates from landing. |
+| `src/vscode/extension.ts` | `activate()` — registers commands, custom editor provider, and workspace/editor/config listeners |
+| `src/vscode/GoPreviewProvider.ts` | Command-based panel. Two modes: **side-by-side** (`open()`, `ViewColumn.Beside`) and **preview-only** (`openOnly()`, `ViewColumn.One`). In preview-only mode, `previewOnly = true` locks the panel to the explicitly opened file (ignores `handleActiveEditorChange`). |
+| `src/vscode/GoPreviewCustomEditorProvider.ts` | `CustomReadonlyEditorProvider` — VS Code calls this when a `.go` file is opened via **Open With → Go Pretty Preview**. Each `resolveCustomEditor` call creates independent per-panel state via closures. |
+| `src/vscode/previewUtils.ts` | Shared utilities used by both providers: `buildShell`, `getHighlighter`, `appendRangeDecorations`, `sendDiagnostics`, `buildHoverHtml` |
 | `src/vscode/ParserService.ts` | Thin vscode wrapper around `GoParser`: supplies `__dirname` as `wasmDir` and logs to an OutputChannel |
 | `src/core/parser.ts` | `GoParser` — vscode-free, injectable `wasmDir`. Also exports `parseGo()` for use in tests or scripts |
 | `src/core/descriptors.ts` | `LineDescriptor` model, `descriptorsFromSource()`, `materialize()`, `LineBuilder` (per-column source maps) |
@@ -226,3 +229,6 @@ npm run lint          # eslint src
 - **ERROR subtrees during live editing.** The source is frequently half-valid while typing. Guard bejárások with `isErrorNode` / `containsError` to skip unparseable regions rather than bailing on the whole file.
 - **Config reads outside `transform()`.** `runTransformers` reads config and passes it as `configValue`. Reading `vscode.workspace.getConfiguration` inside `transform()` would make the transformer untestable — keep the core layer vscode-free.
 - **Async generation counter.** `GoPreviewProvider` increments `updateGeneration` at the start of each `pushUpdate`. After every `await`, check `gen !== this.updateGeneration` before writing shared state — otherwise a stale async update can clobber the current document's data.
+- **`previewOnly` locks the panel to its file.** When `openOnly()` is used, `previewOnly = true` and `handleActiveEditorChange` returns early — the preview does not follow the active editor. Definition jumps and navigate messages still open files in `ViewColumn.One`, creating new tabs in the same tab group; the preview tab stays reachable. Resetting to `false` only happens in `open()`.
+- **Two panel providers share utilities, not state.** `GoPreviewProvider` (command-based) and `GoPreviewCustomEditorProvider` (Open With) both use the functions in `previewUtils.ts` but each manages its own pipeline state independently. `GoPreviewCustomEditorProvider` uses per-call closure state (no shared instance fields) so multiple files can be open simultaneously as custom editors.
+- **Hover merges diagnostics first.** `buildHoverHtml()` in `previewUtils.ts` calls `getDiagnostics()` synchronously (no await) before `executeHoverProvider`, then prepends any matching diagnostics (with 🔴/⚠️/ℹ️/💡 prefix) ahead of the LSP content. The browser `title` attribute on line elements is intentionally absent — diagnostics are shown only in the hover popup to avoid duplicate tooltips.
